@@ -276,7 +276,7 @@ pub fn sct_list_from_x509<R: AsRef<X509Ref>>(cert: &R) -> Result<Option<SctList>
         let res = d2i_SCT_LIST(
             std::ptr::null_mut(),
             &mut pp as *mut _,
-            i64::try_from(data.len()).unwrap(),
+            i64::try_from(data.len()).unwrap().try_into().unwrap(),
         );
         if res.is_null() {
             return Err(crate::Error::BadSct(format!("{}", ErrorStack::get())));
