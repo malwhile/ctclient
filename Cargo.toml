@@ -1,19 +1,12 @@
 [package]
-name = "ctclient"
-description = "Certificate Transparency Log client suitable for monitoring, quick SCT validation, gossiping, etc."
+name = "sctverify"
+description = "A minimal approach to sct verification, just checking signature"
 license = "MIT"
-repository = "https://github.com/micromaomao/ctclient"
-version = "0.4.5"
-authors = ["Mao Wtm <m@maowtm.org>"]
+version = "0.1.0"
 edition = "2021"
-documentation = "https://docs.rs/ctclient"
-readme = "README.md"
-
-[[example]]
-name = "simple_client"
-path = "examples/simple_client/simple_client.rs"
 
 [dependencies]
+anyhow = { version = "1" }
 reqwest = { version = "0.10.4", default-features = false, features = [
     "blocking",
     "native-tls",
@@ -28,13 +21,7 @@ openssl = "0.10.24"
 foreign-types = "0.3.2"
 openssl-sys = "0.9.72"
 log = "0.4.7"
-chrono = "0.4"
 lazy_static = "1.4.0"
-
-[dev-dependencies]
-# for the example binary
-env_logger = "0.7.1"
-rusqlite = "0.23.1"
 
 [build-dependencies]
 openssl-sys = "0.9.72"

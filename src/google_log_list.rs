@@ -2,7 +2,7 @@
 
 use crate::internal::new_http_client;
 use crate::Error;
-
+use base64::{prelude::BASE64_STANDARD, Engine as _};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -13,8 +13,8 @@ struct ResponseJSON {
 
 #[derive(Debug, Deserialize, Clone)]
 struct OperatorJSON {
-    name: String,
-    email: Vec<String>,
+    _name: String,
+    _email: Vec<String>,
     logs: Vec<LogJson>,
 }
 
@@ -22,7 +22,7 @@ struct OperatorJSON {
 struct LogJson {
     key: String,
     log_id: String,
-    mmd: u64,
+    _mmd: u64,
     url: String,
     state: HashMap<String, serde_json::Value>,
     description: String,
@@ -68,15 +68,18 @@ impl LogList {
             .map_err(|e| Error::NetIO(e))?
             .json()
             .map_err(|e| Error::MalformedResponseBody(format!("{}", e)))?;
+
         let mut hm: HashMap<Vec<u8>, Log> =
             HashMap::with_capacity(json.operators.iter().map(|x| x.logs.len()).sum());
+
         fn b64_dec_err(e: base64::DecodeError) -> Error {
             Error::MalformedResponseBody(format!("Unable to decode base64: {}", e))
         }
+
         for op in json.operators.iter() {
             for log in op.logs.iter() {
-                let log_id = base64::decode(&log.log_id).map_err(b64_dec_err)?;
-                let pub_key = base64::decode(&log.key).map_err(b64_dec_err)?;
+                let log_id = BASE64_STANDARD.decode(&log.log_id).map_err(b64_dec_err)?;
+                let pub_key = BASE64_STANDARD.decode(&log.key).map_err(b64_dec_err)?;
                 let base_url = log.url.to_owned();
                 if hm.contains_key(&log_id) {
                     return Err(Error::MalformedResponseBody(
@@ -120,15 +123,24 @@ impl LogList {
     }
 }
 
-#[test]
-fn test() {
-    let ll = LogList::get().unwrap();
-    let nb_logs = ll.map_id_to_log.len();
-    assert!(nb_logs > 0);
-    assert_eq!(
-        ll.find_by_id(&base64::decode("sh4FzIuizYogTodm+Su5iiUgZ2va+nDnsklTLe+LkF4=").unwrap())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let ll = LogList::get().unwrap();
+        let nb_logs = ll.map_id_to_log.len();
+        assert!(nb_logs > 0);
+        assert_eq!(
+            ll.find_by_id(
+                &BASE64_STANDARD
+                    .decode("sh4FzIuizYogTodm+Su5iiUgZ2va+nDnsklTLe+LkF4=")
+                    .unwrap()
+            )
             .unwrap()
             .base_url,
-        "https://ct.googleapis.com/logs/argon2020/"
-    );
+            "https://ct.googleapis.com/logs/argon2020/"
+        );
+    }
 }

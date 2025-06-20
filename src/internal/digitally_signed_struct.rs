@@ -1,8 +1,7 @@
+use crate::{utils, Error};
+use anyhow::Result;
 use log::trace;
 use openssl::pkey::PKey;
-
-use crate::utils;
-use crate::Error;
 
 // https://docs.rs/rustls/0.15.2/src/rustls/msgs/enums.rs.html#720
 // We only need to handle these two cases because RFC says so.
@@ -130,19 +129,26 @@ pub fn verify_dss_raw(
     Ok(())
 }
 
-#[test]
-fn verify_dss_test() {
-    let key = PKey::public_key_from_der(&utils::hex_to_u8("3056301006072a8648ce3d020106052b8104000a0342000412c022d1b5cab048f419d46f111743cea4fcd54a05228d14cecd9cc1d120e4cc3e22e8481e5ccc3db16273a8d981ac144306d644a4227468fccd6580563ec8bd")[..]).unwrap();
-    verify_dss(&utils::hex_to_u8("040300473045022100ba6da0fb4d4440965dd1d096212da95880320113320ddc5202a0b280ac518349022005bb17637d4ed06facb4af5b4b9b9083210474998ac33809a6e10c9352032055"), &key, b"hello").unwrap();
-    verify_dss(&utils::hex_to_u8("0403004830460221009857dc5e2bcc0b67059a5bde9ead6a36614ab315423c0b2e4762ba7aca3f0181022100eab3af33367cb89d556c17c1ce7de1c2b8c2b80d709d0c3cbb45c8acc6809d1d"), &key, b"not hello").unwrap();
-    verify_dss(&utils::hex_to_u8("0403004830460221009857dc5e2bcc0b67059a5bde9ead6a36614ab315423c0b2e4762ba7aca3f0181022100eab3af33367cb89d556c17c1ce7de1c2b8c2b80d709d0c3cbb45c8acc6809d1d"), &key, b"hello").expect_err("");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // Don't panic.
-    verify_dss(&utils::hex_to_u8(""), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("00"), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("0001"), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("000102"), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("00010203"), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("0001020304"), &key, b"hello").expect_err("");
-    verify_dss(&utils::hex_to_u8("000102030405"), &key, b"hello").expect_err("");
+    #[test]
+    fn verify_dss_test() -> Result<()> {
+        let key = PKey::public_key_from_der(&utils::hex_to_u8("3056301006072a8648ce3d020106052b8104000a0342000412c022d1b5cab048f419d46f111743cea4fcd54a05228d14cecd9cc1d120e4cc3e22e8481e5ccc3db16273a8d981ac144306d644a4227468fccd6580563ec8bd")?[..]).unwrap();
+        verify_dss(&utils::hex_to_u8("040300473045022100ba6da0fb4d4440965dd1d096212da95880320113320ddc5202a0b280ac518349022005bb17637d4ed06facb4af5b4b9b9083210474998ac33809a6e10c9352032055")?, &key, b"hello").unwrap();
+        verify_dss(&utils::hex_to_u8("0403004830460221009857dc5e2bcc0b67059a5bde9ead6a36614ab315423c0b2e4762ba7aca3f0181022100eab3af33367cb89d556c17c1ce7de1c2b8c2b80d709d0c3cbb45c8acc6809d1d")?, &key, b"not hello").unwrap();
+        verify_dss(&utils::hex_to_u8("0403004830460221009857dc5e2bcc0b67059a5bde9ead6a36614ab315423c0b2e4762ba7aca3f0181022100eab3af33367cb89d556c17c1ce7de1c2b8c2b80d709d0c3cbb45c8acc6809d1d")?, &key, b"hello").expect_err("");
+
+        // Don't panic.
+        verify_dss(&utils::hex_to_u8("")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("00")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("0001")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("000102")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("00010203")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("0001020304")?, &key, b"hello").expect_err("");
+        verify_dss(&utils::hex_to_u8("000102030405")?, &key, b"hello").expect_err("");
+
+        Ok(())
+    }
 }

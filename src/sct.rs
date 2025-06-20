@@ -1,16 +1,13 @@
-use std::convert::TryInto;
-
-use openssl::pkey::PKey;
-use openssl::sha::sha256;
-use openssl::x509::X509Ref;
-
-use crate::internal::leaf_hash_constructors;
-use crate::internal::openssl_ffi::{
-    sct_list_from_x509, x509_clone, x509_remove_sct_list, x509_to_tbs, SCTVersion,
-    SignatureAlgorithm,
+use crate::internal::{
+    openssl_ffi::{
+        sct_list_from_x509, x509_clone, x509_remove_sct_list, x509_to_tbs, SCTVersion,
+        SignatureAlgorithm,
+    },
+    verify_dss_raw,
 };
-use crate::internal::verify_dss_raw;
 use crate::Error;
+use openssl::{pkey::PKey, sha::sha256, x509::X509Ref};
+use std::convert::TryInto;
 
 fn to_unknown_err(openssl_err: openssl::error::ErrorStack) -> Error {
     Error::Unknown(format!("{}", openssl_err))
@@ -51,16 +48,17 @@ impl SignedCertificateTimestamp {
         cert: &X509Ref,
         issuer: &X509Ref,
     ) -> Result<Vec<SignedCertificateTimestamp>, Error> {
-        let sctlist = sct_list_from_x509(cert)?;
-        if sctlist.is_none() {
-            return Ok(Vec::new());
-        }
-        let sctlist = sctlist.unwrap();
+        let sctlist = match sct_list_from_x509(cert)? {
+            Some(val) => val,
+            None => return Ok(Vec::new()),
+        };
+
         let tbs = {
             let mut cert_clone = x509_clone(cert).map_err(to_unknown_err)?;
             x509_remove_sct_list(&mut cert_clone).map_err(to_unknown_err)?;
             x509_to_tbs(&cert_clone).map_err(to_unknown_err)?
         };
+
         let issuer_key_hash = {
             let k = issuer
                 .public_key()
@@ -71,6 +69,7 @@ impl SignedCertificateTimestamp {
                 .map_err(to_unknown_err)?;
             sha256(&k)
         };
+
         let mut scts = Vec::with_capacity(sctlist.len());
         for raw_sct in sctlist.into_iter() {
             if raw_sct.version() != Some(SCTVersion::V1) {
@@ -93,26 +92,6 @@ impl SignedCertificateTimestamp {
             });
         }
         Ok(scts)
-    }
-
-    /// Derive the corresponding Merkle leaf hash from this SCTs.
-    ///
-    /// Can be used to check inclusion, for example.
-    pub fn derive_leaf_hash(&self) -> [u8; 32] {
-        match &self.entry {
-            SctEntry::PreCert {
-                tbs,
-                issuer_key_hash,
-            } => leaf_hash_constructors::with_precert(
-                &tbs[..],
-                &issuer_key_hash[..],
-                self.timestamp,
-                &self.extensions_data,
-            ),
-            SctEntry::X509(x509) => {
-                leaf_hash_constructors::with_x509(&x509, self.timestamp, &self.extensions_data)
-            }
-        }
     }
 
     /// Check the signature in this SCT.

@@ -1,15 +1,14 @@
 //! Because `openssl` crate is incomplete.
 
-use std::convert::TryFrom;
-use std::ptr::null_mut;
-
-use foreign_types::{ForeignType, ForeignTypeRef};
-use openssl::error::ErrorStack;
-use openssl::stack::{Stack, Stackable};
-use openssl::x509::X509Ref;
-use openssl_sys::ASN1_OBJECT;
-
 use foreign::*;
+use foreign_types::{ForeignType, ForeignTypeRef};
+use openssl::{
+    error::ErrorStack,
+    stack::{Stack, Stackable},
+    x509::X509Ref,
+};
+use openssl_sys::ASN1_OBJECT;
+use std::{convert::TryFrom, ptr::null_mut};
 
 /// Because `openssl_sys` crate is incomplete.
 #[allow(non_camel_case_types)]
@@ -18,7 +17,6 @@ pub mod foreign {
     pub enum SCT {}
 
     pub type sct_version_t = i32;
-    pub const SCT_VERSION_NOT_SET: sct_version_t = -1;
     pub const SCT_VERSION_V1: sct_version_t = 0;
 
     extern "C" {
@@ -56,18 +54,12 @@ pub mod foreign {
         pub fn X509_EXTENSION_get_data(
             ne: *mut openssl_sys::X509_EXTENSION,
         ) -> *mut openssl_sys::ASN1_OCTET_STRING;
-        pub fn X509_EXTENSION_set_data(
-            ex: *mut openssl_sys::X509_EXTENSION,
-            data: *mut openssl_sys::ASN1_OCTET_STRING,
-        ) -> ::std::os::raw::c_int;
 
         pub fn d2i_SCT_LIST(
             a: *mut *mut SCT_LIST,
             pp: *mut *const ::std::os::raw::c_uchar,
             len: ::std::os::raw::c_long,
         ) -> *mut SCT_LIST;
-
-        pub fn SCT_LIST_free(a: *mut SCT_LIST);
 
         pub fn SCT_get_version(sct: *const SCT) -> sct_version_t;
         pub fn SCT_get0_log_id(
@@ -85,19 +77,6 @@ pub mod foreign {
             sig: *mut *mut ::std::os::raw::c_uchar,
         ) -> ::std::os::raw::c_ulong;
         pub fn SCT_free(sct: *mut SCT);
-
-        pub fn X509_set_issuer_name(
-            x: *mut openssl_sys::X509,
-            name: *mut openssl_sys::X509_NAME,
-        ) -> ::std::os::raw::c_int;
-        pub fn X509_get_subject_name(a: *const openssl_sys::X509) -> *mut openssl_sys::X509_NAME;
-
-        pub fn ASN1_STRING_new() -> *mut openssl_sys::ASN1_STRING;
-        pub fn ASN1_STRING_set(
-            str: *mut openssl_sys::ASN1_STRING,
-            data: *const ::std::os::raw::c_void,
-            len: ::std::os::raw::c_int,
-        ) -> ::std::os::raw::c_int;
     }
 }
 
@@ -142,6 +121,7 @@ impl Drop for WrappedObjPointer {
         }
     }
 }
+
 unsafe fn oid_to_obj(zero_terminated_oid: &'static str) -> WrappedObjPointer {
     let ptr = OBJ_txt2obj(zero_terminated_oid.as_ptr() as *const _, 1);
     if ptr.is_null() {
@@ -151,13 +131,10 @@ unsafe fn oid_to_obj(zero_terminated_oid: &'static str) -> WrappedObjPointer {
 }
 
 lazy_static! {
-    static ref POISON_ASN1_OBJECT: WrappedObjPointer =
-        unsafe { oid_to_obj("1.3.6.1.4.1.11129.2.4.3\0") };
     static ref SCT_LIST_ASN1_OBJECT: WrappedObjPointer =
         unsafe { oid_to_obj("1.3.6.1.4.1.11129.2.4.2\0") };
-    static ref AUTHORITY_KEY_IDENTIFIER: WrappedObjPointer = unsafe { oid_to_obj("2.5.29.35\0") };
-    static ref SUBJECT_KEY_IDENTIFIER: WrappedObjPointer = unsafe { oid_to_obj("2.5.29.14\0") };
 }
+
 unsafe fn x509_remove_extension_by_obj(
     cert: &mut openssl::x509::X509,
     obj: &WrappedObjPointer,
@@ -174,9 +151,7 @@ unsafe fn x509_remove_extension_by_obj(
         Ok(())
     }
 }
-pub fn x509_remove_poison(cert: &mut openssl::x509::X509) -> Result<(), ErrorStack> {
-    unsafe { x509_remove_extension_by_obj(cert, &POISON_ASN1_OBJECT) }
-}
+
 pub fn x509_remove_sct_list(
     cert: &mut openssl::x509::X509,
 ) -> Result<(), openssl::error::ErrorStack> {
@@ -190,13 +165,6 @@ unsafe fn asn1_string_to_bytes<'a>(asn1_str: *mut openssl_sys::ASN1_STRING) -> &
     &*std::ptr::slice_from_raw_parts(data_ptr, data_len)
 }
 
-fn bytes_to_asn1_string(bytes: &[u8]) -> openssl::asn1::Asn1String {
-    unsafe {
-        let asn1 = openssl::asn1::Asn1String::from_ptr(ASN1_STRING_new());
-        ASN1_STRING_set(asn1.as_ptr(), bytes.as_ptr() as *const _, bytes.len() as _);
-        asn1
-    }
-}
 fn x509_get_ext_data<'a>(
     cert: &'a X509Ref,
     ext: &WrappedObjPointer,
@@ -214,27 +182,6 @@ fn x509_get_ext_data<'a>(
         Ok(Some(asn1_string_to_bytes(
             X509_EXTENSION_get_data(ext) as *mut _
         )))
-    }
-}
-fn x509_set_ext_data(
-    cert: &mut openssl::x509::X509,
-    ext: &WrappedObjPointer,
-    data: &[u8],
-) -> Result<(), crate::Error> {
-    unsafe {
-        use crate::Error;
-        let extpos = X509_get_ext_by_OBJ(cert.as_ptr(), *ext.0.lock().unwrap(), -1);
-        if extpos == -1 {
-            return Err(Error::Unknown(
-                "x509_set_ext_data: no such extension".to_owned(),
-            ));
-        }
-        let ext = X509_get_ext(cert.as_ptr(), extpos);
-        if ext.is_null() {
-            return Err(Error::Unknown(ErrorStack::get().to_string()));
-        }
-        X509_EXTENSION_set_data(ext, bytes_to_asn1_string(data).as_ptr() as *mut _);
-        Ok(())
     }
 }
 
@@ -339,35 +286,4 @@ impl SctRef {
     }
 
     impl_get_data_fn!(raw_signature, SCT_get0_signature);
-}
-
-/// Set the issuer name of `dst` to be the subject name of `src`, and also set the authorityKeyIdentifier of a to the
-/// subjectKeyIdentifier of b.
-pub fn x509_make_a_looks_like_issued_by_b(
-    a: &mut openssl::x509::X509,
-    b: &openssl::x509::X509Ref,
-) -> Result<(), crate::Error> {
-    use crate::Error;
-    let subj_name = unsafe { X509_get_subject_name(b.as_ptr()) };
-    // subj_name is an internal pointer to data in src.
-    let ret = unsafe { X509_set_issuer_name(a.as_ptr(), subj_name) };
-    // X509_set_issuer_name copies the data pointed to by subj_name.
-    if ret != 1 {
-        Err(Error::Unknown(ErrorStack::get().to_string()))
-    } else {
-        let subj_auth_keyid = x509_get_ext_data(b, &SUBJECT_KEY_IDENTIFIER)
-            .map_err(|e| Error::Unknown(e.to_string()))?
-            .ok_or_else(|| Error::Unknown("x509_get_ext_data returned None".to_owned()))?;
-        if subj_auth_keyid.len() < 2 || subj_auth_keyid.len() > (1 << 8) - 1 {
-            return Err(Error::BadCertificate("Bad subjectKeyIdentifier".to_owned()));
-        }
-        let key = &subj_auth_keyid[2..];
-        if &subj_auth_keyid[0..2] != &[0x04, key.len() as u8] {
-            return Err(Error::BadCertificate("Bad subjectKeyIdentifier".to_owned()));
-        }
-        let mut auth_data = vec![0x30, (key.len() + 2) as u8, 0x80, key.len() as u8];
-        auth_data.extend_from_slice(&key);
-        x509_set_ext_data(a, &AUTHORITY_KEY_IDENTIFIER, &auth_data)?;
-        Ok(())
-    }
 }
